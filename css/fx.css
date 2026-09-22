@@ -1,0 +1,1368 @@
+/* ==========================================================================
+   GENESĪS · FX LAYER
+   Слой поверх авторских стилей: пиксельные поля, пиксели активной вкладки,
+   свет и летящие пиксели на кнопках, перетекание текста, scroll-driven
+   анимации, ритм секций и полировка отклика. Подключается последним из
+   main.css, поэтому правила той же специфичности перекрывают авторские.
+   Палитра — только авторская: мята #6CD9D9, поверхности #16181A / #212326,
+   фон #0B0C0D, приглушённый текст #666. Ничего нового в цвет не добавлено.
+   ========================================================================== */
+
+:root {
+  /* Сильные кривые вместо встроенных: встроенные ease-* слишком вялые */
+  --gfx-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --gfx-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --gfx-mint-rgb: 108, 217, 217;
+}
+
+/* --------------------------------------------------------------------------
+   0. Lenis — плавная прокрутка. Родной scroll-behavior: smooth у автора с ним
+   конфликтует (два движка тянут страницу одновременно), поэтому выключен,
+   пока Lenis активен; якоря и слайдер ездят через lenis.scrollTo (fx.js).
+   -------------------------------------------------------------------------- */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+html.lenis {
+  scroll-behavior: auto;
+}
+
+.lenis.lenis-stopped {
+  overflow: clip;
+}
+
+.lenis [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+/* --------------------------------------------------------------------------
+   1. Пиксельное поле — дышащие клетки фона.
+   Прозрачность 0.03–0.10, циклы 6–14 с, у каждой клетки свой сдвиг: поле
+   медленно дышит, а не мерцает. Раскладка задана таблицей в js/fx.js.
+   -------------------------------------------------------------------------- */
+.gfx-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gfx-px {
+  position: absolute;
+  display: block;
+  opacity: 0;
+  background: var(--c);
+  animation: gfx-breath var(--d) ease-in-out var(--delay) infinite;
+}
+
+@keyframes gfx-breath {
+  0%, 100% { opacity: 0; }
+  45% { opacity: var(--peak); }
+  70% { opacity: calc(var(--peak) * 0.4); }
+}
+
+/* Поля лежат на фоне секций: hero, тарифы, FAQ, футер. Содержимое — на слой
+   выше, а карточки над полем стеклянные: сквозь backdrop-filter клетки идут
+   размытыми пятнами и никогда не ложатся на текст. */
+.hero-section > .gfx-field,
+.tariffs-section > .gfx-field,
+.faq-section > .gfx-field,
+.footer-cta-section > .gfx-field {
+  z-index: 0;
+}
+
+.tariffs-section,
+.faq-section {
+  position: relative;
+}
+
+.tariffs-container,
+.faq-container,
+.footer-cta-inner {
+  position: relative;
+  z-index: 1;
+}
+
+/* Под заголовком hero и футера в поле вырезано окно: там клеток нет вовсе */
+.hero-section > .gfx-field {
+  -webkit-mask-image: radial-gradient(ellipse 36% 16% at 50% 18%, transparent 0 62%, #000 100%);
+  mask-image: radial-gradient(ellipse 36% 16% at 50% 18%, transparent 0 62%, #000 100%);
+}
+
+.footer-cta-section > .gfx-field {
+  -webkit-mask-image: radial-gradient(ellipse 34% 26% at 50% 24%, transparent 0 60%, #000 100%);
+  mask-image: radial-gradient(ellipse 34% 26% at 50% 24%, transparent 0 60%, #000 100%);
+}
+
+/* Карточки над полем — почти непрозрачные, без backdrop-filter: каждый такой
+   слой пересчитывается на любом кадре прокрутки, десяток карточек над
+   анимированным полем заметно грузил браузер. Клетки видны только в зазорах. */
+.tariff-card,
+.faq-support-card {
+  background: rgba(22, 24, 26, 0.95);
+}
+
+.faq-question-box {
+  background: rgba(22, 24, 26, 0.95);
+}
+
+/* Рекомендованный тариф: поле внутри карточки, под текстом; вместо матового
+   стекла над ним — размытие самого поля (filter на маленьком слое дёшев) */
+.tariff-card-featured-inner {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.gfx-field-deep {
+  z-index: -1;
+  border-radius: inherit;
+  filter: blur(5px);
+}
+
+/* --------------------------------------------------------------------------
+   2. Пиксели активной вкладки.
+   Четырнадцать квадратиков, у каждого свой тон, размер и одна из трёх
+   анимаций мерцания. Появляются лесенкой (каждый следующий на 16 мс позже),
+   уходят быстрее и тоже лесенкой — разом гаснущая сетка выглядит как
+   выключенный свет.
+   -------------------------------------------------------------------------- */
+.gfx-sq-host {
+  position: relative;
+  isolation: isolate;
+}
+
+.gfx-sq-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: 0;
+  z-index: -1;
+  /* Слой гаснет, дождавшись, пока квадратики ужмутся лесенкой */
+  transition: opacity 0.1s linear 0.42s;
+}
+
+.gfx-sq {
+  position: absolute;
+  display: block;
+  background: var(--c);
+  transform: scale(0);
+  transition: transform 0.24s var(--gfx-ease-out);
+  transition-delay: calc(var(--i, 0) * 12ms);
+  animation-name: var(--anim);
+  animation-duration: var(--d);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-play-state: paused;
+}
+
+[data-gfx-active] > .gfx-sq-layer {
+  opacity: var(--gfx-sq-opacity, 0.6);
+  transition-delay: 0s;
+}
+
+[data-gfx-active] > .gfx-sq-layer > .gfx-sq {
+  transform: scale(1);
+  transition-duration: 0.32s;
+  transition-delay: calc(var(--i, 0) * 16ms);
+  animation-play-state: running;
+}
+
+@keyframes gfx-sq1 {
+  0% { opacity: 0.15; }
+  30% { opacity: 0.9; }
+  60% { opacity: 0.35; }
+  100% { opacity: 0.15; }
+}
+
+@keyframes gfx-sq2 {
+  0% { opacity: 0.7; }
+  40% { opacity: 0.1; }
+  75% { opacity: 0.95; }
+  100% { opacity: 0.7; }
+}
+
+@keyframes gfx-sq3 {
+  0% { opacity: 0.3; }
+  25% { opacity: 0.85; }
+  55% { opacity: 0.2; }
+  80% { opacity: 0.6; }
+  100% { opacity: 0.3; }
+}
+
+/* Меню: активный раздел (scroll-spy ставит aria-current) — мятным, без
+   квадратиков под текстом: они мешали читать. Цвет меняется за 200 мс. */
+.header-nav .nav-link[aria-current] {
+  color: #6CD9D9;
+}
+
+/* Вкладки экосистемы: переход резче авторского, активная — авторский белый */
+.ecosystem-tab-item {
+  width: fit-content;
+  max-width: 100%;
+  transition: color 0.25s var(--gfx-ease-out), transform 0.25s var(--gfx-ease-out), opacity 0.25s var(--gfx-ease-out);
+}
+
+/* --------------------------------------------------------------------------
+   3. Кнопки при наведении: свет снизу и пиксели, летящие вверх — как над
+   полем ввода чата. Слой внутри кнопки, срезан её радиусом;
+   пиксели стоят на паузе, пока кнопка не под курсором. Снаружи — мягкий
+   мятный ореол поверх авторской тени.
+   -------------------------------------------------------------------------- */
+.gfx-rise-host {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.gfx-rise-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s var(--gfx-ease-out);
+}
+
+.gfx-rise-glow {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(255, 255, 255, var(--gfx-glow, 0.55)) 0%, rgba(255, 255, 255, calc(var(--gfx-glow, 0.55) * 0.45)) 28%, rgba(255, 255, 255, calc(var(--gfx-glow, 0.55) * 0.12)) 60%, rgba(255, 255, 255, 0) 100%);
+}
+
+.gfx-spark {
+  position: absolute;
+  bottom: 0;
+  display: block;
+  opacity: 0;
+  background: #ffffff;
+  animation: gfx-rise var(--d) linear var(--delay) infinite;
+  animation-play-state: paused;
+}
+
+@keyframes gfx-rise {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: var(--peak); }
+  70% { opacity: calc(var(--peak) * 0.45); }
+  100% { transform: translateY(calc(var(--dist) * -1)); opacity: 0; }
+}
+
+.gfx-rise-host:focus-visible > .gfx-rise-layer {
+  opacity: 1;
+}
+
+.gfx-rise-host:focus-visible > .gfx-rise-layer .gfx-spark {
+  animation-play-state: running;
+}
+
+/* Наведение — только там, где есть настоящий курсор: на тач-экранах
+   :hover зависает после нажатия, и свет не погас бы. */
+@media (hover: hover) and (pointer: fine) {
+  .gfx-rise-host:hover > .gfx-rise-layer {
+    opacity: 1;
+  }
+
+  .gfx-rise-host:hover > .gfx-rise-layer .gfx-spark {
+    animation-play-state: running;
+  }
+
+  .hero-cta-btn:hover,
+  .scenarios-cta-btn:hover,
+  .app-cta-btn:hover,
+  .footer-btn-primary:hover,
+  .tariff-btn:hover,
+  .faq-support-btn:hover {
+    box-shadow: 0 24px 48px -12px rgba(82, 204, 204, 0.45), 0 0 36px rgba(108, 217, 217, 0.35);
+  }
+
+  .footer-btn-secondary:hover {
+    box-shadow: 0 4px 20px -2px rgba(108, 217, 217, 0.25), 0 0 28px rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* Тёмная кнопка футера: свет слабее, иначе он читается как заливка */
+.footer-btn-secondary {
+  --gfx-glow: 0.16;
+}
+
+/* Кнопка хедера: ширина от текста и без переносов — пока шрифт грузился,
+   «Забрать GENESĪS» системным шрифтом не влезало в 146 px и ломалось на две строки */
+.header-btn {
+  width: auto;
+  min-width: 146px;
+  padding: 0 18px;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   4. Отклик на нажатие (Emil Kowalski).
+   Кнопка обязана ответить на нажатие: scale(0.97) за 100 мс. Наведение с
+   подъёмом и тенью — только при настоящем курсоре, на тач-экране это
+   ложное срабатывание.
+   -------------------------------------------------------------------------- */
+@media (hover: none) {
+  .hero-cta-btn:hover,
+  .scenarios-cta-btn:hover,
+  .app-cta-btn:hover,
+  .footer-btn-primary:hover,
+  .tariff-btn:hover,
+  .faq-support-btn:hover,
+  .header-btn:hover,
+  .footer-btn-secondary:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+.hero-cta-btn:active,
+.scenarios-cta-btn:active,
+.app-cta-btn:active,
+.footer-btn-primary:active,
+.tariff-btn:active,
+.faq-support-btn:active,
+.header-btn:active,
+.footer-btn-secondary:active,
+.orientation-header-btn:active {
+  transform: scale(0.97);
+  transition-duration: 0.1s;
+}
+
+.stories-nav-btn:active,
+.feedbacks-nav-btn:active,
+.guides-nav-btn:active,
+.mobile-menu-toggle:active,
+.payment-modal__close:active,
+.gfx-sfx:active {
+  transform: scale(0.94);
+  transition-duration: 0.1s;
+}
+
+.stories-nav-btn,
+.feedbacks-nav-btn,
+.guides-nav-btn {
+  transition: background-color var(--transition-fast), opacity var(--transition-fast), transform 0.16s var(--gfx-ease-out);
+}
+
+/* Выключенная стрелка не ловит нажатия вовсе: ни щелчка, ни :active */
+.stories-nav-btn:disabled,
+.feedbacks-nav-btn:disabled,
+.guides-nav-btn:disabled {
+  pointer-events: none;
+}
+
+.faq-question-box {
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), transform 0.16s var(--gfx-ease-out);
+}
+
+.faq-question-box:active {
+  transform: scale(0.985);
+}
+
+.ecosystem-tab-item:active {
+  transform: scale(0.97);
+}
+
+.ecosystem-tab-item.active:active {
+  transform: translateX(4px) scale(0.97);
+}
+
+/* transition: all — заменено перечислением: анимируются только те свойства,
+   что меняются, и ничего не дёргается при смене текста или размера */
+.footer-btn-secondary {
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform var(--transition-fast);
+}
+
+/* --------------------------------------------------------------------------
+   5. FAQ: плюс складывается в минус, а не подменяется картинкой.
+   Тот же кружок #212326 и тонкие белые штрихи, что в авторских SVG.
+   Раскрытие — авторская сетка 0fr → 1fr; уход короче прихода.
+   -------------------------------------------------------------------------- */
+.gfx-plus {
+  position: relative;
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #212326;
+}
+
+.gfx-plus::before,
+.gfx-plus::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 1px;
+  background: #fff;
+  transform: translate(-50%, -50%) rotate(0deg);
+  transition: transform 0.28s var(--gfx-ease-out);
+}
+
+.gfx-plus::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.faq-item-group.active .gfx-plus::after {
+  transform: translate(-50%, -50%) rotate(180deg);
+}
+
+.faq-answer-collapse {
+  transition: grid-template-rows 0.3s var(--gfx-ease-out), opacity 0.22s ease;
+}
+
+.faq-item-group.active .faq-answer-collapse {
+  transition: grid-template-rows 0.38s var(--gfx-ease-out), opacity 0.3s ease 0.06s;
+}
+
+/* --------------------------------------------------------------------------
+   6. Появление карточек при прокрутке (IntersectionObserver, один раз):
+   opacity + 14px вверх, 600 мс, лесенка 60 мс между соседями. Атрибут
+   ставит скрипт и только элементам ниже первого экрана; после появления
+   снимает — hover-состояния карточек остаются авторскими.
+   -------------------------------------------------------------------------- */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.6s var(--gfx-ease-out), transform 0.6s var(--gfx-ease-out);
+  transition-delay: calc(var(--reveal-i, 0) * 60ms);
+}
+
+[data-reveal].is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* --------------------------------------------------------------------------
+   7. Scroll-driven анимации: движение привязано к положению прокрутки, а не
+   к таймеру — вперёд и назад одинаково. Уроки и экраны IDM (повторяющиеся
+   блоки) выезжают по мере входа в экран, заголовки секций проявляются,
+   руки в hero отстают от прокрутки. Где view() нет — работает п. 6.
+   -------------------------------------------------------------------------- */
+@keyframes gfx-view-in {
+  from { opacity: 0; transform: translateY(36px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Телефоны IDM центрируются авторским translateX(-50%) — он входит в кадры */
+@keyframes gfx-view-up {
+  from { opacity: 0; transform: translateX(-50%) translateY(110px) scale(0.97); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+@keyframes gfx-hand-left {
+  from { transform: rotate(5deg) translateY(0); }
+  to { transform: rotate(5deg) translateY(140px); }
+}
+
+@keyframes gfx-hand-right {
+  from { transform: rotate(5deg) translateY(0); }
+  to { transform: rotate(5deg) translateY(90px); }
+}
+
+@keyframes gfx-hero-fade {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to { opacity: 0; transform: translateX(-50%) translateY(-40px); }
+}
+
+/* Руки в hero: входят с краёв навстречу друг другу, потом медленно
+   «почти касаются» — 7–8 с туда-обратно. Вход идёт по transform картинки,
+   покачивание — по отдельным translate/rotate: два движения не спорят за
+   одно свойство, а параллакс прокрутки живёт на обёртке. */
+@keyframes gfx-hand-enter-left {
+  from { opacity: 0; transform: translateX(-80px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes gfx-hand-enter-right {
+  from { opacity: 0; transform: translateX(80px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes gfx-hand-float-left {
+  from { translate: 0 0; rotate: 0deg; }
+  to { translate: 16px -14px; rotate: -1.6deg; }
+}
+
+@keyframes gfx-hand-float-right {
+  from { translate: 0 0; rotate: 0deg; }
+  to { translate: -14px 12px; rotate: 1.3deg; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-float-left img {
+    animation:
+      gfx-hand-enter-left 1.6s var(--gfx-ease-out) both,
+      gfx-hand-float-left 7s ease-in-out 1.6s infinite alternate;
+  }
+
+  .hero-float-right img {
+    animation:
+      gfx-hand-enter-right 1.6s var(--gfx-ease-out) 0.15s both,
+      gfx-hand-float-right 8s ease-in-out 1.75s infinite alternate;
+  }
+}
+
+/* view() меряет положение относительно ближайшего scroll-контейнера, а
+   overflow: hidden такой контейнер создаёт — сцена телефонов и карточки
+   функций IDM замораживали анимации внутри себя на одном кадре. clip режет
+   так же, но контейнером прокрутки не становится. */
+.app-phones-stage,
+.app-feature-card {
+  overflow: clip;
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /* Уроки: подпись строки и обе карточки, вторая чуть позже первой */
+    .lesson-row-label,
+    .lesson-card {
+      animation: gfx-view-in linear both;
+      animation-timeline: view();
+      animation-range: entry 5% entry 60%;
+    }
+
+    .lesson-cards-pair .lesson-card:nth-child(2) {
+      animation-range: entry 15% entry 70%;
+    }
+
+    /* IDM: три телефона поднимаются, средний последним; карточки функций лесенкой */
+    .app-phone-item {
+      animation: gfx-view-up linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 75%;
+    }
+
+    .app-phone-item.phone-2 {
+      animation-range: entry 12% entry 88%;
+    }
+
+    .app-feature-card {
+      animation: gfx-view-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+
+    .app-feature-card:nth-child(2) {
+      animation-range: entry 10% entry 65%;
+    }
+
+    .app-feature-card:nth-child(3) {
+      animation-range: entry 20% entry 75%;
+    }
+
+    /* Заголовки секций; sticky-блоки (сценарии, слайдер) не трогаем */
+    .feedbacks-header-wrap,
+    .funnel-title,
+    .funnel-left-text,
+    .funnel-right-text,
+    .observation-title,
+    .observation-left-text,
+    .observation-right-text,
+    .lessons-header-wrap,
+    .ecosystem-header,
+    .app-title-wrap,
+    .app-quote-callout,
+    .trailer-title-wrap,
+    .tariffs-header-wrap,
+    .screenshots-header-wrap,
+    .guides-header-wrap,
+    .faq-title,
+    .footer-cta-content {
+      animation: gfx-view-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 45%;
+    }
+
+    /* Hero: руки и заголовок отстают от прокрутки первых 900 px */
+    .hero-float-left {
+      animation: gfx-hand-left linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 900px;
+    }
+
+    .hero-float-right {
+      animation: gfx-hand-right linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 900px;
+    }
+
+    .hero-center-box {
+      animation: gfx-hero-fade linear both;
+      animation-timeline: scroll(root);
+      animation-range: 120px 720px;
+    }
+  }
+}
+
+/* Телефон: три телефона IDM стоят в ряд лентой на всю ширину экрана и по
+   мере прокрутки секции проезжают справа налево — движение привязано к
+   прокрутке, назад едут обратно. Края ленты растворяются маской. Обёртки
+   (.gfx-idm-strip — неподвижная полоса с маской, ширину и вынос до кромки
+   экрана ей выставляет fx.js; .gfx-idm-track — едущий ряд) добавляет fx.js;
+   на десктопе обе display: contents и раскладку не меняют. Авторские
+   правила телефонов на мобильном стоят с !important — здесь тоже. */
+.gfx-idm-strip,
+.gfx-idm-track {
+  display: contents;
+}
+
+@keyframes gfx-idm-fly {
+  from { transform: translateX(30vw); }
+  to { transform: translateX(-30vw); }
+}
+
+@media (max-width: 640px) {
+  .app-phones-stage {
+    height: auto;
+    overflow: visible;
+  }
+
+  .gfx-idm-strip {
+    display: block;
+    overflow: clip;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  }
+
+  .gfx-idm-track {
+    display: flex;
+    justify-content: center;
+    gap: 18px;
+    padding: 8px 0;
+    will-change: transform;
+  }
+
+  /* Через обёртку: авторские top/left заданы селекторами из двух классов */
+  .gfx-idm-track .app-phone-item {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    width: 150px !important;
+    height: 356px !important;
+    flex: 0 0 auto;
+  }
+
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .gfx-idm-track {
+        animation: gfx-idm-fly linear both;
+        animation-timeline: view();
+        animation-range: cover 0% cover 100%;
+      }
+
+      /* Подъём телефонов (десктоп) здесь не нужен: едет весь ряд */
+      .app-phone-item {
+        animation: none;
+      }
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
+   8. Ритм секций на десктопе. У автора чёрные секции разделены 200 px, а
+   серые полосы (отзывы, экосистема + IDM) сверх того несли 200–240 px
+   внутренних отступов и фиксированные высоты из Figma — на стыках
+   получалось от 200 до 440 px, а FAQ вылезал за низ секции. Теперь: между
+   секциями 200, внутри серой полосы 120, высоты по содержимому.
+   -------------------------------------------------------------------------- */
+@media (min-width: 1025px) {
+  .feedbacks-section {
+    height: auto;
+    min-height: 0;
+    padding: 100px 0;
+  }
+
+  /* Экосистема и IDM — одна серая полоса: отрицательный отступ IDM гасит
+     общий gap, между содержимым 100 */
+  .ecosystem-section {
+    height: auto;
+    min-height: 0;
+    padding: 100px 0 0;
+  }
+
+  .app-section {
+    height: auto;
+    min-height: 0;
+    padding: 100px 0;
+  }
+
+  .trailer-section,
+  .trailer-container,
+  .tariffs-section,
+  .guides-section,
+  .faq-section,
+  .faq-container,
+  .faq-right-col {
+    height: auto;
+    min-height: 0;
+  }
+
+  .faq-section,
+  .faq-container {
+    overflow: visible;
+  }
+
+  /* FAQ: левая колонка липнет к экрану, пока справа листаются вопросы, а
+     карточка «Остались вопросы?» стоит вплотную под заголовком — у автора
+     между ними было 80–96 px пустоты, и плашка висела сама по себе */
+  .faq-left-col {
+    position: sticky;
+    top: 112px;
+    gap: 40px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .feedbacks-section,
+  .faq-right-col {
+    height: auto;
+    min-height: 0;
+  }
+}
+
+/* Секция слайдера модулей была на полтона светлее страницы (#0D0E10 против
+   #0B0C0D): её верхняя кромка над промежутком читалась как пустой блок.
+   Фон — как у страницы, промежуток растворяется. */
+.system-slider-section {
+  background: #0B0C0D;
+}
+
+/* --------------------------------------------------------------------------
+   8а. Телефон: хвосты авторской мобильной вёрстки. Правила обычные: fx.css
+   идёт последним, а два авторских !important, которые мешали (100vw у
+   секций и 390 px у карточки отзыва), сняты прямо в mobile-390.css.
+   -------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  /* Отзывы: карточка была 390 px с пустотой под цитатой */
+  .feedback-card {
+    height: auto;
+    min-height: 0;
+  }
+
+  .feedbacks-section {
+    height: auto;
+    min-height: 0;
+    padding-top: 80px;
+    padding-bottom: 80px;
+  }
+
+  .feedbacks-footer-nav {
+    margin-top: 32px;
+  }
+
+  /* IDM: секция фиксированных 2622 px, и кнопка «Забрать» вылезала на стык
+     со следующей секцией — высота по содержимому, кнопка внутри полосы */
+  .app-section {
+    height: auto;
+    min-height: 0;
+    padding-bottom: 64px;
+  }
+
+  /* Скриншоты чата: авторские три колонки, листаемые вбок, стояли в блоке
+     фиксированных 984 px — под колонками оставалось ~350 px пустоты.
+     Высоты по содержимому, лента со snap по колонкам, полоса прокрутки спрятана */
+  .screenshots-section,
+  .screenshots-inner {
+    position: relative;
+    top: auto;
+    left: auto;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .screenshots-header-wrap {
+    position: relative;
+    top: auto;
+  }
+
+  .screenshots-grid-cols {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+    margin-top: 32px;
+    padding: 0 16px 12px;
+    box-sizing: border-box;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .screenshots-grid-cols::-webkit-scrollbar {
+    display: none;
+  }
+
+  .screenshots-col {
+    scroll-snap-align: start;
+  }
+
+  /* Появление карточек: на телефоне лесенка короче, чтобы при быстрой
+     прокрутке блоки не казались пропавшими */
+  [data-reveal] {
+    transition-delay: calc(min(var(--reveal-i, 0), 2) * 50ms);
+    transition-duration: 0.45s;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   9. Отзывы: карточки по содержимому, цитата свёрнута до пяти строк,
+   «Показать больше» раскрывает её с точной высотой (fx.js).
+   -------------------------------------------------------------------------- */
+/* Карточки одной высоты (по самой высокой в ряду), автор прижат к низу —
+   как у автора, только без фиксированных 390 px */
+.feedback-card {
+  height: auto;
+  min-height: 0;
+  justify-content: flex-start;
+  gap: 24px;
+}
+
+.feedback-card .feedback-author {
+  margin-top: auto;
+}
+
+.feedback-quote {
+  max-height: var(--gfx-quote-h, 104px);
+  overflow: hidden;
+  transition: max-height 0.34s var(--gfx-ease-out);
+}
+
+.feedback-card:not(.is-open) .feedback-quote.is-clamped {
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, rgba(0, 0, 0, 0.15) 100%);
+  mask-image: linear-gradient(to bottom, #000 62%, rgba(0, 0, 0, 0.15) 100%);
+}
+
+.gfx-more {
+  align-self: flex-start;
+  margin: -8px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: 'Gilroy', sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.3;
+  letter-spacing: -0.28px;
+  color: #6CD9D9;
+  cursor: pointer;
+  transition: color var(--transition-fast), transform 0.16s var(--gfx-ease-out);
+}
+
+.gfx-more:active {
+  transform: scale(0.97);
+}
+
+.gfx-more:focus-visible {
+  outline: 2px solid #6CD9D9;
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gfx-more:hover {
+    color: #9FF0F0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   10. Слайдер модулей: тексты обоих слайдов перетекают в одном слое
+   (fx.js + slider.js), второй слой только хранит тексты
+   -------------------------------------------------------------------------- */
+/* torph делает корень inline-block с nowrap — он рассчитан на короткие строки.
+   Абзацу и заголовку возвращаем блочный поток, переносы остаются: слова
+   внутри — inline-block и переносятся между собой. */
+#system-text-layer-1 .system-slide-tag,
+#system-text-layer-1 .system-slide-title,
+#system-text-layer-1 .system-slide-desc,
+#ecosystem-desc {
+  display: block !important;
+  white-space: normal !important;
+}
+
+#system-text-layer-1 .system-slide-title,
+#ecosystem-desc {
+  white-space: pre-line !important;
+}
+
+#system-text-layer-2 {
+  display: none;
+}
+
+/* Сноска про Instagram занимает место на обоих слайдах и лишь проявляется на
+   втором: иначе блок менял высоту на ~45 px при каждом переключении.
+   Свой композитный слой: iOS Safari при затухании обычного текстового блока
+   перерисовывал его не целиком и оставлял обрывки строк. */
+#system-text-layer-1 .legal-note {
+  transition: opacity 0.3s var(--gfx-ease-out), visibility 0s linear 0s;
+  will-change: opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+#system-text-layer-1 .legal-note.is-off {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s var(--gfx-ease-out), visibility 0s linear 0.3s;
+}
+
+.system-slider-num {
+  transition: none;
+  will-change: auto;
+}
+
+/* --------------------------------------------------------------------------
+   11. Окно оплаты: вход и выход анимированы (классы is-entering / is-closing).
+   Модальное окно масштабируется из центра — оно не привязано к кнопке.
+   Из scale(0) ничего не появляется: старт с 0.96.
+   -------------------------------------------------------------------------- */
+.payment-modal {
+  opacity: 1;
+  transition: opacity 0.22s var(--gfx-ease-out);
+}
+
+.payment-modal__dialog {
+  transform: scale(1);
+  transition: transform 0.3s var(--gfx-ease-out);
+}
+
+/* Состояния «за кадром»: is-entering ставит fx.js на кадр перед показом,
+   is-closing — main.js на время ухода, hidden приходит после него.
+   У стартового состояния переходы выключены: авторский focus() успевает
+   посчитать стили раньше, и без этого старт не снапался, а «ехал». */
+.payment-modal.is-entering,
+.payment-modal.is-closing {
+  opacity: 0;
+}
+
+.payment-modal.is-entering,
+.payment-modal.is-entering .payment-modal__dialog {
+  transition: none;
+}
+
+.payment-modal.is-entering .payment-modal__dialog,
+.payment-modal.is-closing .payment-modal__dialog {
+  transform: scale(0.96);
+}
+
+/* Ручка листа: на десктопе её нет */
+.gfx-drawer-grip {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   11б. Телефон: окно оплаты — выезжающий снизу лист (drawer), а не модалка.
+   Кривая и 500 мс — как у листов iOS. Свайп вниз за ручку закрывает: по
+   расстоянию (четверть высоты) или по скорости (быстрый флик), вверх лист
+   идёт с сопротивлением (fx.js). Форма внутри — по правилам iOS 26 Safari:
+   лист не переставляется под клавиатуру сам (это делает браузер),
+   margin-top 6rem и max-height 85dvh держат его ниже верхней кромки,
+   отступы на самом листе, прокрутка у дочернего блока с min-height: 0.
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  .payment-modal {
+    place-items: end center;
+    padding: 0;
+    transition: opacity 0.5s var(--gfx-ease-out);
+  }
+
+  .payment-modal__dialog {
+    width: 100%;
+    max-width: none;
+    margin-top: 6rem;
+    max-height: 85dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+    /* Без отступов: форма — iframe виджета GetCourse, он ложится от края до
+       края и от самого верха, ручка и крестик висят поверх него. Фон
+       подобран под карточку виджета, чтобы её углы не читались. */
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    border-radius: 20px 20px 0 0;
+    background: #1b1d21;
+    box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.45);
+    transform: translateY(0);
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .payment-modal.is-entering .payment-modal__dialog,
+  .payment-modal.is-closing .payment-modal__dialog {
+    transform: translateY(100%);
+  }
+
+  /* Пока палец на ручке, лист следует за ним без переходов */
+  .payment-modal__dialog.is-dragging {
+    transition: none;
+  }
+
+  /* Ручка — поверх iframe, у верхней кромки листа; под ней лёгкая тень,
+     чтобы читалась на любом содержимом виджета */
+  .gfx-drawer-grip {
+    display: flex;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 3;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    background: linear-gradient(to bottom, rgba(27, 29, 33, 0.85) 0%, rgba(27, 29, 33, 0) 100%);
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .gfx-drawer-grip::before {
+    content: "";
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+  }
+
+  .payment-modal__close {
+    top: 12px;
+    right: 12px;
+    z-index: 4;
+  }
+
+  /* Скрипт виджета ставит слоту inline overflow: hidden и height по высоте
+     iframe — прокрутка внутри листа возможна только с !important */
+  .payment-modal__dialog .payment-widget-slot {
+    height: auto !important;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .payment-widget-slot iframe {
+    display: block;
+  }
+
+  /* Поля виджета оплаты: от 16px, иначе iOS приближает страницу при фокусе.
+     Виджет сторонний, свои размеры ставит сам — поэтому !important. */
+  .payment-widget-slot input,
+  .payment-widget-slot select,
+  .payment-widget-slot textarea {
+    font-size: 16px !important;
+    min-width: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   11а. Хедер: градиент и прогрессивное размытие.
+   Вместо плоской подложки rgba(.85) + blur(16px): тёмный градиент, который
+   к низу растворяется в страницу на 56 px ниже хедера, мятный отсвет у
+   логотипа и холодный — у кнопки. Размытие — один слой backdrop-filter с
+   маской: полная сила у верхней кромки, к хвосту сходит на нет (fx.js).
+   Один слой, а не стопка: backdrop-filter в фиксированном элементе
+   пересчитывается на каждом кадре прокрутки.
+   -------------------------------------------------------------------------- */
+.site-header {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  --gfx-header-tail: 56px;
+}
+
+/* Десктоп: хедер уезжает вверх вместе с хвостом и возвращается сверху */
+.site-header {
+  transition: transform 0.35s var(--gfx-ease-out);
+}
+
+.site-header.header-hidden {
+  transform: translateY(calc(-100% - var(--gfx-header-tail)));
+}
+
+.site-header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: calc(var(--gfx-header-tail) * -1);
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(70% 160% at 9% 0%, rgba(108, 217, 217, 0.16) 0%, rgba(108, 217, 217, 0) 62%),
+    radial-gradient(46% 140% at 93% 0%, rgba(138, 229, 229, 0.07) 0%, rgba(138, 229, 229, 0) 58%),
+    linear-gradient(to bottom, rgba(12, 13, 14, 0.94) 0%, rgba(12, 13, 14, 0.86) 45%, rgba(12, 13, 14, 0.5) 72%, rgba(12, 13, 14, 0) 100%);
+}
+
+.gfx-header-blur {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: calc(var(--gfx-header-tail) * -1);
+  z-index: -2;
+  pointer-events: none;
+}
+
+.gfx-header-blur > span {
+  position: absolute;
+  inset: 0;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, #000 55%, #000 100%);
+  mask-image: linear-gradient(to top, transparent 0%, #000 55%, #000 100%);
+}
+
+/* iOS 26 Safari «продлевает» в safe-area любой фиксированный бар во всю
+   ширину, касающийся верхней кромки, и красит вырез его цветом сплошняком.
+   На телефоне хедер — плавающая пилюля под вырезом: кромки не касается,
+   зона остаётся прозрачной, страница видна сквозь неё. theme-color из
+   <head> убран — он красит зону явно. env() на десктопе равен нулю. */
+@media (max-width: 768px) {
+  .site-header {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    right: calc(10px + env(safe-area-inset-right, 0px));
+    /* Ширина задана явно от viewport, а не через right: если какое-то правило
+       вернёт right: 0, пилюля всё равно останется с отступами с обеих сторон.
+       Авторский width: 100vw !important для хедера снят в mobile-390.css. */
+    width: calc(100% - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    max-width: none;
+    margin: 0;
+    border-radius: 18px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+    --gfx-header-tail: 0px;
+  }
+
+  .site-header::before {
+    border-radius: inherit;
+  }
+
+  /* На телефоне размытия под хедером нет вовсе: дорого, а пилюля и так на
+     плотном градиенте */
+  .gfx-header-blur {
+    display: none;
+  }
+
+  /* Телефон: без transform — элемент, уезжающий к кромке, iOS сэмплирует и
+     красит полосу статус-бара. Прячется затуханием с лёгким сжатием к центру
+     (320 мс), возвращается за 380 мс. Сжатие — отдельным свойством scale. */
+  .site-header {
+    transform: none;
+    scale: 1;
+    transition: opacity 0.38s var(--gfx-ease-out), scale 0.38s var(--gfx-ease-out), visibility 0s linear 0s;
+  }
+
+  .site-header.header-hidden {
+    transform: none;
+    scale: 0.97;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.32s var(--gfx-ease-out), scale 0.32s var(--gfx-ease-out), visibility 0s linear 0.32s;
+  }
+
+  /* Плотный слой клеток на телефоне лишний: вдвое меньше анимированных слоёв */
+  .gfx-px:nth-child(n + 21) {
+    display: none;
+  }
+
+  /* Слайдер модулей: у автора стадия текста — абсолютный блок фиксированных
+     180–198 px (с !important), и сноска про Instagram на втором слайде в него
+     не влезала. Стадия и блок содержимого растут по тексту; отступ 46 px —
+     прежнее положение стадии под номером и стрелками. */
+  .system-slider-content {
+    height: auto !important;
+    min-height: min(420px, calc(55vh - 20px)) !important;
+    padding-bottom: 24px !important;
+  }
+
+  .system-text-stage {
+    position: relative !important;
+    top: auto !important;
+    margin-top: 46px !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  #system-text-layer-1 {
+    position: relative !important;
+    top: auto !important;
+  }
+
+  /* Без хвоста и без размытия градиент плотнее — пилюля цельная */
+  .site-header::before {
+    background:
+      radial-gradient(80% 180% at 8% 0%, rgba(108, 217, 217, 0.18) 0%, rgba(108, 217, 217, 0) 60%),
+      linear-gradient(to bottom, rgba(12, 13, 14, 0.96) 0%, rgba(12, 13, 14, 0.9) 100%);
+  }
+
+  /* Проверка гипотезы iOS 26: полоса статус-бара красится цветом секции у верхней кромки.
+     У hero остаётся только градиент-картинка, цвет подложки — прозрачный. */
+  .hero-section {
+    background-color: transparent;
+  }
+
+  /* Мобильное меню — карточка под пилюлей, со своей подложкой */
+  .header-nav {
+    top: calc(100% + 8px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .header-inner {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   12. Звук интерфейса: кнопка-переключатель в хедере, в тон .header-btn
+   -------------------------------------------------------------------------- */
+.header-cta {
+  gap: 8px;
+}
+
+.gfx-sfx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform 0.16s var(--gfx-ease-out);
+}
+
+.gfx-sfx svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.gfx-sfx[aria-pressed="false"] {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.gfx-sfx[aria-pressed="false"] .gfx-sfx-on,
+.gfx-sfx[aria-pressed="true"] .gfx-sfx-off {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gfx-sfx:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(108, 217, 217, 0.3);
+  }
+}
+
+.gfx-sfx:focus-visible {
+  outline: 2px solid #6CD9D9;
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .gfx-sfx {
+    width: 32px;
+    height: 32px;
+  }
+
+  .gfx-sfx svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   13. Счётчики с перетеканием (torph).
+   Сценарии: «01 / 05» под заголовком — где ты в длинном sticky-блоке.
+   Карусели: «1 / 3» страниц слева от пилюли со стрелками.
+   -------------------------------------------------------------------------- */
+.gfx-scn-counter {
+  display: block;
+  margin-top: 20px;
+  font-family: 'Wremena', serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 0;
+  color: #6CD9D9;
+}
+
+.gfx-scn-total,
+.gfx-index-sep,
+.gfx-index-total {
+  color: #666666;
+}
+
+@media (max-width: 1024px) {
+  .gfx-scn-counter {
+    display: none;
+  }
+}
+
+.guides-nav-pill,
+.feedbacks-carousel-controls {
+  position: relative;
+}
+
+.gfx-index {
+  position: absolute;
+  right: calc(100% + 16px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-family: 'Wremena', serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1;
+  color: #6CD9D9;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   14. Меньше движения: клетки замирают на слабой прозрачности, квадратики
+   стоят, свет без искр, карточки только проявляются. Lenis не включается,
+   scroll-driven анимации отключены условием выше. base.css уже обнуляет
+   длительности.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .gfx-px {
+    animation: none;
+    opacity: 0.05;
+  }
+
+  .gfx-sq {
+    animation: none;
+    transition: none;
+    transform: none;
+    opacity: 0.35;
+  }
+
+  .gfx-spark {
+    animation: none;
+  }
+
+  [data-reveal] {
+    transform: none;
+  }
+
+  .gfx-plus::before,
+  .gfx-plus::after {
+    transition: none;
+  }
+}
